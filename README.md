@@ -13,7 +13,7 @@
 ## Data Pre-Processing
 
 ### How to Run:
-🔄 **Notebook**: Simply download the data we have uploaded: [Data (20230918)](./Data%20(20230918)/), and then execute the [Melbourne Footfall Data Preprocessing Notebook](./Python%20scripts/Melbourne_footfall_data_preprocessing.ipynb) to perform the necessary data pre-processing.
+🔄 **Notebook**: Simply download the data we have uploaded: [Data (20230918)](./Data%20(20230918)/), and then execute the [Melbourne_footfall_data_preprocessing.ipynb](./Python%20scripts/Melbourne_footfall_data_preprocessing.ipynb) to perform the necessary data pre-processing.
 
 The latest data also can be downloaded from:
 - [Pedestrian Counting System (counts per hour)](https://melbournetestbed.opendatasoft.com/explore/dataset/pedestrian-counting-system-monthly-counts-per-hour/information/)
@@ -29,7 +29,7 @@ The latest data also can be downloaded from:
    - Purpose: Achieve consistency across datasets, especially for data collected in 2023.
    - Action: Augment records from 2023 that only contain Location IDs with the corresponding sensor names and geo-locations.
 
-the preprocessed data are saved in [data_preprocessed](./data_preprocessed/)
+the preprocessed data are saved in [data_preprocessed](./data_preprocessed/):
    - [1. merged_peds_data_hist_curr](./data_preprocessed/1.%20merged_peds_data_hist_curr/) stores the data for offline learning, please unzip [footfall_merged.csv.zip](./data_preprocessed/1.%20merged_peds_data_hist_curr/footfall_merged.csv.zip) before executing the notebooks.
    - [4. final_group](./data_preprocessed/4.%20final_group/) stores the data for online learning.
 
