@@ -26,7 +26,7 @@
 
 ## Footfall Modelling
 
-Explore patterns, make predictions, and derive valuable insights about pedestrian traffic in Melbourne.
+Explore pedestrian patterns in Melbourne.
 
 ### Guided Modelling:
 📘 **For Beginners and Detailed Instructions**:
