@@ -13,7 +13,12 @@
 ## Data Pre-Processing
 
 ### How to Run:
-🔄 **Notebook**: Simply execute the [`Melbourne_footfall_data_preprocessing.ipynb`](./Python%20scripts/Melbourne_footfall_data_preprocessing.ipynb) notebook to perform the necessary data pre-processing.
+🔄 **Notebook**: Simply download data we uploaded [Data (20230918)](./Data (20230918)/) and execute the [`Melbourne_footfall_data_preprocessing.ipynb`](./Python%20scripts/Melbourne_footfall_data_preprocessing.ipynb) notebook to perform the necessary data pre-processing.
+
+The latest data also can be downloaded from:
+- [Pedestrian Counting System (counts per hour)](https://melbournetestbed.opendatasoft.com/explore/dataset/pedestrian-counting-system-monthly-counts-per-hour/information/)
+
+- [Pedestrian Counting System - Sensor Locations](https://melbournetestbed.opendatasoft.com/explore/dataset/pedestrian-counting-system-sensor-locations/information/)
 
 ### Pre-Processing Steps:
 1. **Duplicate Data Handling**: 
@@ -23,6 +28,8 @@
 2. **Sensor ID Unification**: 
    - Purpose: Achieve consistency across datasets, especially for data collected in 2023.
    - Action: Augment records from 2023 that only contain Location IDs with the corresponding sensor names and geo-locations.
+
+the preprocessed data are saved in [data_preprocessed](./data_preprocessed/)
 
 ## Footfall Modelling
 
