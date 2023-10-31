@@ -31,7 +31,6 @@ The latest data also can be downloaded from:
 
 the preprocessed data are saved in [data_preprocessed](./data_preprocessed/)
    - [1. merged_peds_data_hist_curr](./data_preprocessed/1.%20merged_peds_data_hist_curr/) stores the data for offline learning, please unzip [footfall_merged.csv.zip](./data_preprocessed/1.%20merged_peds_data_hist_curr/footfall_merged.csv.zip) before executing the notebooks.
-   - [1. merged_peds_data_hist_curr](./data_preprocessed/1.%20merged_peds_data_hist_curr/).
    - [4. final_group](./data_preprocessed/4.%20final_group/) stores the data for online learning.
 
 ## Footfall Modelling
