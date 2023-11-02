@@ -9,6 +9,7 @@ from tslearn.clustering import TimeSeriesKMeans, KShape, KernelKMeans
 from sklearn.metrics import r2_score, silhouette_score, davies_bouldin_score, calinski_harabasz_score, pairwise_distances
 # from validclust import dunn
 from autoelbow_rupakbob import autoelbow
+from scipy.interpolate import CubicSpline
 
 from basic_funs import *
 
@@ -106,6 +107,7 @@ def find_interpolation_methods(df, save_path, aggregation=None, seed=42):
   methods = [
       {'method': 'time'},
       {'method': 'linear'},
+      # {'method': 'cubic_spine'},
       {'method': 'quadratic', 'order': 2},
       {'method': 'cubic', 'order': 3},
       {'method': 'polynomial', 'order': 5},
@@ -151,7 +153,13 @@ def find_interpolation_methods(df, save_path, aggregation=None, seed=42):
         method_name = method['method']
         order = method.get('order', None)
         try:
+          # if method_name == 'cubic_spine':
+          #   cs = CubicSpline(complete_rows_before_.dropna().index, complete_rows_before_.dropna())
+          #   data_interpolated = pd.DataFrame(cs(complete_rows_before_.index), index=complete_rows_before_.index)
+          # else:
+          #   data_interpolated = complete_rows_before_.interpolate(method=method_name, order=order)
           data_interpolated = complete_rows_before_.interpolate(method=method_name, order=order)
+          data_interpolated[data_interpolated < 0] = 0
         except:
           # print(f"{method} is not suitable.")
           if method not in remove:
@@ -181,7 +189,14 @@ def find_interpolation_methods(df, save_path, aggregation=None, seed=42):
       })
 
   results_df = pd.DataFrame(results)
-  results_df.sort_values(by=["R2", "MAE"], ascending=[False, True])
+
+  results_df.sort_values(by=["R2", "MAE"], ascending=[False, True], inplace=True)
+
+  # results_df['R2 Rank'] = results_df['R2'].rank(ascending=False)
+  # results_df['MAE Rank'] = results_df['MAE'].rank(ascending=True)
+  # results_df['Average Rank'] = results_df[['R2 Rank', 'MAE Rank']].mean(axis=1)
+  # results_df.sort_values(by=["Average Rank"], ascending=True, inplace=True)
+
   print_table(results_df)
   print(f"The best method is: {results_df.iloc[0][0]} with an average R2 score of {results_df.iloc[0][1]:.2f} and an average MAE score of {results_df.iloc[0][2]:.2f}")
   if pd.isna(results_df.iloc[0][1]):
@@ -206,6 +221,8 @@ def fill_missinng_data(data, save_path, aggregation=None, seed=42):
     df.interpolate(method=best_interpolation['method'], order=best_interpolation['order'], inplace=True)
   else:
     df.interpolate(method=best_interpolation['method'], inplace=True)
+  
+  df[df < 0] = 0
   
   missing_after = df.isna().sum().sum()
   

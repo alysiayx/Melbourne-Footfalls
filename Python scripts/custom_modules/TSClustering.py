@@ -6,6 +6,7 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
+import seaborn as sns
 from typing import Dict
 from collections import Counter
 from pathlib import PosixPath
@@ -379,6 +380,12 @@ class TSClustering:
     plt.imshow(img)
     plt.axis('off')
     plt.show()
+  
+  def load_data(self, save_dir=None, file_name=None):
+    if save_dir is None:
+      save_dir = self.save_dir
+    df = pd.read_excel(save_dir / file_name)
+    return df
 
   def assign_clusters_and_save(self):
     print("-"*50)
@@ -511,6 +518,35 @@ class TSClustering:
     
     return data
     
+  def consecutive_missing(self, data, threshold):
+    is_missing = data.isnull()
+    consec_missing = (is_missing.groupby((is_missing != is_missing.shift()).cumsum())
+                      .cumsum())
+    return (consec_missing > threshold).any()
+  
+  def remove_sensors(self, data=None, threshold=0.5, consec_threshold=24*3):
+    if data is None:
+      data = self.data.copy()
+
+    print('-'*50)
+    print(f'Removing data with large missing values...')
+
+    counts = len(data)
+    missing_data_per_row = data.isnull().mean(axis=1)
+
+    data = data.loc[missing_data_per_row <= threshold]
+
+    sensors_to_remove = data.apply(lambda row: self.consecutive_missing(row, consec_threshold), axis=1)
+
+    data = data.loc[~sensors_to_remove]
+
+    print(f"{counts - len(data)} sensors have been removed.")
+
+    self.data = data
+    save_data(data, save_dir=self.save_dir, file_name='filtered_data.xlsx', index=True, rewrite=self.rewrite)
+
+    return data
+
   def process_data(self): # On going
     # process the data before feeding them into model
 
@@ -526,8 +562,8 @@ class TSClustering:
 
     for operation in self.order_of_impute_agg_norm.split("_"):
       if operation == "impute":
-        self.impute_data() # impute data first then select time span or vice versa?
         self.select_time_span(keep_index=data_cut.index) # select specific time span 
+        self.impute_data() # impute data first then select time span or vice versa?
         self.plot_data(fig_name='plot_imputed_data')
       elif operation == "agg":
         self.aggregation()
