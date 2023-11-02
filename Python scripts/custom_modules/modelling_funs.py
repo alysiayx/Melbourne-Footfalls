@@ -8,7 +8,7 @@ from sklearn.preprocessing import StandardScaler
 from tslearn.clustering import TimeSeriesKMeans, KShape, KernelKMeans
 from sklearn.metrics import r2_score, silhouette_score, davies_bouldin_score, calinski_harabasz_score, pairwise_distances
 # from validclust import dunn
-from autoelbow_rupakbob import autoelbow
+#from autoelbow_rupakbob import autoelbow
 from scipy.interpolate import CubicSpline
 
 from basic_funs import *
