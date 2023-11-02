@@ -1,5 +1,12 @@
 # Melbourne Footfall Analysis and Modelling
 
+## Dependencies
+- Python 3.9+
+- numpy==1.22.4
+- pandas==2.1.1
+- matplotlib==3.8.1
+- seaborn==0.11.2
+
 ## Basic Data Analysis
 
 ### Data Format Analysis
@@ -31,7 +38,7 @@ The latest data also can be downloaded from:
 
 the preprocessed data are saved in [data_preprocessed](./data_preprocessed/):
    - [1. merged_peds_data_hist_curr](./data_preprocessed/1.%20merged_peds_data_hist_curr/) stores the data for offline learning, please unzip [footfall_merged.csv.zip](./data_preprocessed/1.%20merged_peds_data_hist_curr/footfall_merged.csv.zip) before executing the notebooks.
-   - [4. final_group](./data_preprocessed/4.%20final_group/) stores the data for online learning.
+   - [4. final_group](./data_preprocessed/4.%20final_group/) stores the data for online learning: Due to the potential variations in the installation times of the sensors, the data utilised for online learning is divided into chunks, ensuring that each chunk contains as complete a set of sensor data as possible, with missing data not exceeding 50%.
 
 ## Footfall Modelling
 
@@ -44,3 +51,7 @@ Explore pedestrian patterns in Melbourne.
 ### Direct Modelling:
 🚀 **For Experienced Users**:
    - If you are already familiar with the process, you can jump straight into the main modelling notebook: [`Melbourne_footfall_modelling.ipynb`](./Python%20scripts/Melbourne_footfall_modelling.ipynb).
+
+### TBD:
+- AutoML is not yet included.
+- Instead of preparing the data for online learning prior to feeding it into the model, it is possible to integrate data preparation with model training and execution.
