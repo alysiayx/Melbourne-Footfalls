@@ -1,11 +1,7 @@
 # Melbourne Footfall Analysis and Modelling
 
 ## Dependencies
-- Python 3.9+
-- numpy==1.22.4
-- pandas==2.1.1
-- matplotlib==3.8.1
-- seaborn==0.11.2
+- [`requirements.txt`](./Python%20scripts/requirements.txt)
 
 ## Basic Data Analysis
 
