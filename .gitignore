@@ -1,0 +1,12 @@
+# vim
+*.swp
+
+# Mac crap
+.DS_Store
+
+# Python stuff
+__pycache__
+.ipynb_checkpoints
+
+# Test data
+Results_impute_analysis_test*
