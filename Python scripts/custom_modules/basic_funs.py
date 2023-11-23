@@ -5,6 +5,8 @@
 # @Last Modified time: 2023-09-17 03:40:38
 
 import re
+import zipfile
+import gzip
 import numpy as np
 import pandas as pd
 from tabulate import tabulate
@@ -299,3 +301,37 @@ def merge_hist_curr_sensor_data(hist_data, curr_data, sensor_data):
   
 def print_table(data):
   print(tabulate(data, headers=data.columns, tablefmt="outline"))
+
+def read_file_with_stem(directory_path, file_name_to_search):
+  # handle some large files may be zipped and cannot read directly
+
+  found_files = []
+
+  for file in directory_path.iterdir():
+    if file.name.startswith(file_name_to_search + "."):
+      found_files.append(file)
+  
+  print(f"find matched file(s): {found_files}")
+
+  if len(found_files) >= 1:
+    file = found_files[0]
+    if file.suffix == '.zip': 
+      # cannot directly read 'footfall_merged.csv.zip' due to "Multiple files error"
+      print(f"extract file(s) in {file}")
+      with zipfile.ZipFile(file, 'r') as z:
+        # Extract all files inside the zip file
+        z.extractall(directory_path)
+        for extracted_file in directory_path.glob(file.stem + '*'):
+          if extracted_file.suffix == '.csv':
+            print(f"read {extracted_file}")
+            data = pd.read_csv(extracted_file)
+            break
+    elif file.suffix in ['.csv', '.gz']:
+      print(f"read {file}")
+      data = pd.read_csv(file)
+    # # or using gzip to process file with .gz extension
+    # elif file.suffix == '.gz':
+    #   with gzip.open(file, 'rt') as f:
+    #     data = pd.read_csv(f)
+  else:
+    print(f"{len(found_files)} file(s) found for '{file_name_to_search}'. Please check.")
