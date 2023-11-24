@@ -335,3 +335,5 @@ def read_file_with_stem(directory_path, file_name_to_search):
     #     data = pd.read_csv(f)
   else:
     print(f"{len(found_files)} file(s) found for '{file_name_to_search}'. Please check.")
+  
+  return data
