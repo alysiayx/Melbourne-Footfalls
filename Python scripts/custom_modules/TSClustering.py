@@ -224,17 +224,25 @@ class TSClustering:
       else:
         scale_key = self.scale
       
-      filter_func = is_weekend if 'weekend' in self.scale else is_workday
+      if 'weekend' in self.scale:
+        filter_func = is_weekend
+        data = df_transposed[df_transposed.index.map(filter_func)]
+      elif 'workday' in self.scale:
+        filter_func = is_workday
+        data = df_transposed[df_transposed.index.map(filter_func)]
+      else:
+        data = df_transposed
+      
       if scale_key in time_scales:
         rule = time_scales[scale_key]
       else:
         rule = 'D'
         
       if isinstance(rule, tuple):
-        data = df_transposed[df_transposed.index.map(filter_func)].between_time(*rule).resample('D').sum().reset_index()
+        data = data.between_time(*rule).resample('D').sum().reset_index()
       else:
-        data = df_transposed[df_transposed.index.map(filter_func)].resample(rule).sum().reset_index()
-
+        data = data.resample(rule).sum().reset_index()
+      
       data = data.transpose()
       data.columns = data.loc[self.time_column]
       data = data.drop(self.time_column)
