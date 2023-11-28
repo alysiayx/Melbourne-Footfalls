@@ -69,12 +69,17 @@ def set_path(save_dir, save_subdir=None, file_name=None):
     save_path = save_dir / save_subdir
   else:
     save_path = save_dir
-  save_path.mkdir(parents=True, exist_ok=True)
-  print(f"{save_path} created.")
 
   if file_name is not None:
+    save_path.mkdir(parents=True, exist_ok=True)
+    print(f"{save_path} created.")
     return save_path / file_name
   else:
+    # check if save_path is dir
+    if save_path.suffix: # if the file has an extension
+      save_path.parent.mkdir(parents=True, exist_ok=True)
+    else:
+      save_path.mkdir(parents=True, exist_ok=True)
     return save_path
 
 def save_data(data, save_dir, save_subdir=None, file_name=None, index=False, header=True, 
@@ -88,13 +93,13 @@ def save_data(data, save_dir, save_subdir=None, file_name=None, index=False, hea
       print(f"{save_path} will be saved.")
     
     # Check if data has MultiIndex columns and is being written to an Excel file
-    if isinstance(data.columns, pd.MultiIndex) and file_name.endswith('.xlsx'):
+    if isinstance(data.columns, pd.MultiIndex) and str(save_path).endswith('.xlsx'):
       if not index:  # If index is set to False
         print("Data has MultiIndex columns. Resetting columns and setting 'index=True'.")
         data.columns = [' '.join(col).strip() for col in data.columns.values]
         index = True
 
-    if file_name.endswith('.xlsx'):
+    if str(save_path).endswith('.xlsx'):
       data.to_excel(save_path, index=index, header=header, index_label=index_label)
     else:
       data.to_csv(save_path, index=index, header=header, index_label=index_label)
