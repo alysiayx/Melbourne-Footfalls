@@ -37,7 +37,8 @@ class TSClustering:
     - scale: None or
       "day", 'week', 'month', 'year', 'hour'
       'early_morning', 'morning', 'midday', 'afternoon', 'evening'
-      'workday', 'weekend'
+      'workday', 'weekend',
+
     - model: 
       "kmeans", "kshape", "kernelkmeans", "birch", "ensemble"
     - time_span: float, int or list
@@ -50,8 +51,10 @@ class TSClustering:
       True, False or None
     - dim_reduction: 
       'PCA', 'IPCA' or None
-    - "order_of_impute_agg": 
+    - order_of_impute_agg: 
       "impute_agg_norm", "impute_norm_agg", "agg_impute_norm", or "agg_norm_impute"
+    - remove_missing_data:
+      True or False
     """
     self.raw_data = data.copy() # original row data
     self.data = data.copy() # data during pre-processed
@@ -79,6 +82,7 @@ class TSClustering:
       "df_results": None,
       "feature_extraction": None,
       "dim_reduction": None,
+      "remove_missing_data": False,
       "save_dir": "./",
       "seed": 42,
       "rewrite": True,
@@ -93,9 +97,15 @@ class TSClustering:
     for key, value in default_config.items():
       setattr(self, key, value)
     
+    default_model_configs = get_default_model_configs(self.algorithm, self.seed)
     if self.model_configs is None:
       print("the model's configs are set as default values.")
-      self.model_configs = get_default_model_configs(self.algorithm, self.seed)
+      self.model_configs = default_model_configs
+    else:
+      default_model_configs.update(self.model_configs)
+      self.model_configs = default_model_configs
+
+      print(self.model_configs)
 
   def _validate_config(self):
     if (self.target_column is None or 
@@ -187,49 +197,65 @@ class TSClustering:
     # the data is pivoted after this step
     if data is None:
       data = self.data.copy()
-
+    
     print("-"*50)
     print(f"the data size before aggregation is {data.shape}")
     if self.scale is not None:
+      def is_weekend(index):
+        return index.dayofweek >= 5
+
+      def is_workday(index):
+        return index.dayofweek < 5
+        
       print(f"the data will be aggregated by {self.scale}")
       df_transposed = transpose_data(data)
-      if self.scale == 'year':
-        data = df_transposed.resample('Y').sum().reset_index()
-      elif self.scale == 'month':
-        data = df_transposed.resample('M').sum().reset_index()
-      elif self.scale == 'week':
-        data = df_transposed.resample('W').sum().reset_index()
-      elif self.scale == 'day':
-        data = df_transposed.resample('D').sum().reset_index()
-      elif self.scale == 'hour':
-        data = df_transposed.resample('H').sum().reset_index()
-      elif self.scale == 'early_morning':
-        early_morning_data = df_transposed.between_time('00:00', '06:00')
-        data = early_morning_data.resample('D').sum().reset_index()
-      elif self.scale == 'morning':
-        morning_data = df_transposed.between_time('06:00', '12:00')
-        data = morning_data.resample('D').sum().reset_index()
-      elif self.scale == 'midday':
-        midday_data = df_transposed.between_time('12:00', '13:00')
-        data = midday_data.resample('D').sum().reset_index()
-      elif self.scale == 'afternoon':
-        afternoon_data = df_transposed.between_time('13:00', '18:00')
-        data = afternoon_data.resample('D').sum().reset_index()
-      elif self.scale == 'evening':
-        evening_data = df_transposed.between_time('18:00', '00:00')
-        data = evening_data.resample('D').sum().reset_index()
-      elif self.scale == 'weekend':
-        weekend_data = df_transposed[df_transposed.index.dayofweek >= 5]
-        data = weekend_data.resample('D').sum().reset_index()
-      elif self.scale == 'workday':
-        weekend_data = df_transposed[df_transposed.index.dayofweek < 5]
-        data = weekend_data.resample('D').sum().reset_index()
+      time_scales = {
+        'year': 'Y', 'month': 'M', 'week': 'W', 'day': 'D',
+        'early_morning': ('00:00', '06:00'), 'morning': ('06:00', '12:00'), 
+        'midday': ('12:00', '13:00'), 'afternoon': ('13:00', '18:00'), 
+        'evening': ('18:00', '00:00')
+      }
 
+      scale_split = self.scale.split('_')
+      if len(scale_split) == 2:
+        scale_key = scale_split[0]
+      elif len(scale_split) > 2:
+        scale_key = '_'.join(scale_split[:-1])  # Join all but the last part for compound keys
+      else:
+        scale_key = self.scale
+      
+      if 'weekend' in self.scale:
+        filter_func = is_weekend
+        data = df_transposed[df_transposed.index.map(filter_func)]
+      elif 'workday' in self.scale:
+        filter_func = is_workday
+        data = df_transposed[df_transposed.index.map(filter_func)]
+      else:
+        data = df_transposed
+      
+      if scale_key in time_scales:
+        rule = time_scales[scale_key]
+      else:
+        if scale_key != 'hour':
+          rule = 'D'
+        else:
+          rule = None
+        
+      if isinstance(rule, tuple):
+        data = data.between_time(*rule).resample('D').sum().reset_index()
+      else:
+        if rule is not None:
+          data = data.resample(rule).sum().reset_index()
+        else:
+          data = data.groupby(data.index.hour).sum()
+          
       data = data.transpose()
-      data.columns = data.loc[self.time_column]
-      data = data.drop(self.time_column)
+      if rule is not None:
+        data.columns = data.loc[self.time_column]
+        data = data.drop(self.time_column)
       data = data.reset_index().rename(columns={"index": self.target_column}).set_index(self.target_column)
       data = data.dropna(axis=1, how='all')
+      data = data.loc[:, (data != 0).any(axis=0)]
 
       are_columns_ascsending = (list(pd.to_datetime(data.columns)) == sorted(pd.to_datetime(data.columns)))
       if are_columns_ascsending == False:
@@ -563,18 +589,19 @@ class TSClustering:
     for operation in self.order_of_impute_agg_norm.split("_"):
       if operation == "impute":
         self.select_time_span(keep_index=data_cut.index) # select specific time span 
+        if self.remove_missing_data == True:
+          self.remove_sensors()
+          self.plot_data(fig_name='plot_filtered_data')
         self.impute_data() # impute data first then select time span or vice versa?
         self.plot_data(fig_name='plot_imputed_data')
       elif operation == "agg":
         self.aggregation()
         self.plot_data(fig_name='plot_aggregated_data')
       elif operation == "norm":
-        self.data_raw = self.data
-
+        self.data_raw = self.data # store the data before normalisation
         self.normalise_data()
         self.plot_data(fig_name='plot_normalised_data')
-
-        self.data_raw_norm = self.data
+        self.data_raw_norm = self.data # save the data after normalisation
     
     if self.feature_extraction is not None:
         self.extract_features()

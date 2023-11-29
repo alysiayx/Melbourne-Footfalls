@@ -5,6 +5,8 @@
 # @Last Modified time: 2023-09-17 03:40:38
 
 import re
+import zipfile
+import gzip
 import numpy as np
 import pandas as pd
 from tabulate import tabulate
@@ -67,12 +69,17 @@ def set_path(save_dir, save_subdir=None, file_name=None):
     save_path = save_dir / save_subdir
   else:
     save_path = save_dir
-  save_path.mkdir(parents=True, exist_ok=True)
-  print(f"{save_path} created.")
 
   if file_name is not None:
+    save_path.mkdir(parents=True, exist_ok=True)
+    print(f"{save_path} created.")
     return save_path / file_name
   else:
+    # check if save_path is dir
+    if save_path.suffix: # if the file has an extension
+      save_path.parent.mkdir(parents=True, exist_ok=True)
+    else:
+      save_path.mkdir(parents=True, exist_ok=True)
     return save_path
 
 def save_data(data, save_dir, save_subdir=None, file_name=None, index=False, header=True, 
@@ -86,13 +93,13 @@ def save_data(data, save_dir, save_subdir=None, file_name=None, index=False, hea
       print(f"{save_path} will be saved.")
     
     # Check if data has MultiIndex columns and is being written to an Excel file
-    if isinstance(data.columns, pd.MultiIndex) and file_name.endswith('.xlsx'):
+    if isinstance(data.columns, pd.MultiIndex) and str(save_path).endswith('.xlsx'):
       if not index:  # If index is set to False
         print("Data has MultiIndex columns. Resetting columns and setting 'index=True'.")
         data.columns = [' '.join(col).strip() for col in data.columns.values]
         index = True
 
-    if file_name.endswith('.xlsx'):
+    if str(save_path).endswith('.xlsx'):
       data.to_excel(save_path, index=index, header=header, index_label=index_label)
     else:
       data.to_csv(save_path, index=index, header=header, index_label=index_label)
@@ -299,3 +306,39 @@ def merge_hist_curr_sensor_data(hist_data, curr_data, sensor_data):
   
 def print_table(data):
   print(tabulate(data, headers=data.columns, tablefmt="outline"))
+
+def read_file_with_stem(directory_path, file_name_to_search):
+  # handle some large files may be zipped and cannot read directly
+
+  found_files = []
+
+  for file in directory_path.iterdir():
+    if file.name.startswith(file_name_to_search + "."):
+      found_files.append(file)
+  
+  print(f"find matched file(s): {found_files}")
+
+  if len(found_files) >= 1:
+    file = found_files[0]
+    if file.suffix == '.zip': 
+      # cannot directly read 'footfall_merged.csv.zip' due to "Multiple files error"
+      print(f"extract file(s) in {file}")
+      with zipfile.ZipFile(file, 'r') as z:
+        # Extract all files inside the zip file
+        z.extractall(directory_path)
+        for extracted_file in directory_path.glob(file.stem + '*'):
+          if extracted_file.suffix == '.csv':
+            print(f"read {extracted_file}")
+            data = pd.read_csv(extracted_file)
+            break
+    elif file.suffix in ['.csv', '.gz']:
+      print(f"read {file}")
+      data = pd.read_csv(file)
+    # # or using gzip to process file with .gz extension
+    # elif file.suffix == '.gz':
+    #   with gzip.open(file, 'rt') as f:
+    #     data = pd.read_csv(f)
+  else:
+    print(f"{len(found_files)} file(s) found for '{file_name_to_search}'. Please check.")
+  
+  return data
