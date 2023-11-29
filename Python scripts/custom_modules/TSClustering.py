@@ -197,7 +197,7 @@ class TSClustering:
     # the data is pivoted after this step
     if data is None:
       data = self.data.copy()
-
+    
     print("-"*50)
     print(f"the data size before aggregation is {data.shape}")
     if self.scale is not None:
@@ -210,7 +210,7 @@ class TSClustering:
       print(f"the data will be aggregated by {self.scale}")
       df_transposed = transpose_data(data)
       time_scales = {
-        'year': 'Y', 'month': 'M', 'week': 'W', 'day': 'D', 'hour': 'H',
+        'year': 'Y', 'month': 'M', 'week': 'W', 'day': 'D',
         'early_morning': ('00:00', '06:00'), 'morning': ('06:00', '12:00'), 
         'midday': ('12:00', '13:00'), 'afternoon': ('13:00', '18:00'), 
         'evening': ('18:00', '00:00')
@@ -236,16 +236,23 @@ class TSClustering:
       if scale_key in time_scales:
         rule = time_scales[scale_key]
       else:
-        rule = 'D'
+        if scale_key != 'hour':
+          rule = 'D'
+        else:
+          rule = None
         
       if isinstance(rule, tuple):
         data = data.between_time(*rule).resample('D').sum().reset_index()
       else:
-        data = data.resample(rule).sum().reset_index()
-      
+        if rule is not None:
+          data = data.resample(rule).sum().reset_index()
+        else:
+          data = data.groupby(data.index.hour).sum()
+          
       data = data.transpose()
-      data.columns = data.loc[self.time_column]
-      data = data.drop(self.time_column)
+      if rule is not None:
+        data.columns = data.loc[self.time_column]
+        data = data.drop(self.time_column)
       data = data.reset_index().rename(columns={"index": self.target_column}).set_index(self.target_column)
       data = data.dropna(axis=1, how='all')
       data = data.loc[:, (data != 0).any(axis=0)]
