@@ -4,9 +4,10 @@ def get_default_model_configs(algorithm, seed):
   if algorithm == 'kmeans':
     default_model_configs = {
       'metric': 'euclidean',
+      'n_init': 10, 
       'max_iter': 300,
+      'init': 'k-means++',
       "random_state": seed
-
     }
   elif algorithm == 'kernelkmeans':
     default_model_configs = {
