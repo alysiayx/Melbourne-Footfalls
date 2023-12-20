@@ -55,6 +55,8 @@ class TSClustering:
       "impute_agg_norm", "impute_norm_agg", "agg_impute_norm", or "agg_norm_impute"
     - remove_missing_data:
       True or False
+    - best_k_methods: valid for k-means
+      "all", "kneedle", "line_dist", "autoelbow", "agg_scores"
     """
     self.raw_data = data.copy() # original row data
     self.data = data.copy() # data during pre-processed
@@ -78,12 +80,21 @@ class TSClustering:
       "normalise": "meanvariance",
       "model_configs": None,
       "best_k": None,
-      "df_scores": None,
+      "best_k_methods": 'kneedle',
+      "df_scores": None, # may remove later
       "df_results": None,
       "feature_extraction": None,
       "dim_reduction": None,
       "remove_missing_data": False,
       "save_dir": "./",
+      "filename_data_cut": "data.csv", # the filename for data after selecting time span
+      "filename_data_after_agg": "data_aggregated.csv",
+      "filename_data_before_norm": "data_before_norm.csv",
+      "filename_data_after_norm": "data_scaled.csv",
+      "filename_data_after_filtered": "data_filtered.csv", # the filename for data after removing sensors
+      "filename_data_after_imputed": 'data_missing_value_filled.csv',
+      "filename_data_after_dim_red": 'data_reduced.csv',
+      "filename_data_after_prep": 'data_final.csv',
       "seed": 42,
       "rewrite": True,
       "verbose": True,
@@ -105,8 +116,6 @@ class TSClustering:
       default_model_configs.update(self.model_configs)
       self.model_configs = default_model_configs
 
-      print(self.model_configs)
-
   def _validate_config(self):
     if (self.target_column is None or 
         self.time_column is None or 
@@ -121,11 +130,12 @@ class TSClustering:
 
     with open(self.save_dir / '_global_configs.json', 'w') as file:
       json.dump(self.global_configs, file, default=handle_posix_path)
+      print(f"global_configs is set as: {self.global_configs}")
       print('global configs saved.')
     
-    print(self.model_configs)
     with open(self.save_dir / '_model_configs.json', 'w') as file:
       json.dump(self.model_configs, file)
+      print(f"model_configs is set as: {self.model_configs}")
       print('model configs saved.')
     
   def set_save_dir(self, save_dir=None):
@@ -185,7 +195,11 @@ class TSClustering:
 
       print(f"the data shape after cutting is {data.shape}")
       print(f'the data range: {data.columns[0]} - {data.columns[-1]}')
-      save_data(data, save_dir=self.save_dir, file_name='data.csv', rewrite=self.rewrite, index=True)
+      save_data(data, 
+                save_dir=self.save_dir, 
+                file_name=self.filename_data_cut, 
+                rewrite=self.rewrite, 
+                index=True)
     else:
       print("use all data.....")
     
@@ -193,13 +207,14 @@ class TSClustering:
 
     return data
 
-  def aggregation(self, data=None): 
+  # def aggregation(self, data=None): 
     # the data is pivoted after this step
     if data is None:
       data = self.data.copy()
     
     print("-"*50)
     print(f"the data size before aggregation is {data.shape}")
+    
     if self.scale is not None:
       def is_weekend(index):
         return index.dayofweek >= 5
@@ -208,7 +223,9 @@ class TSClustering:
         return index.dayofweek < 5
         
       print(f"the data will be aggregated by {self.scale}")
+      
       df_transposed = transpose_data(data)
+      
       time_scales = {
         'year': 'Y', 'month': 'M', 'week': 'W', 'day': 'D',
         'early_morning': ('00:00', '06:00'), 'morning': ('06:00', '12:00'), 
@@ -217,6 +234,7 @@ class TSClustering:
       }
 
       scale_split = self.scale.split('_')
+
       if len(scale_split) == 2:
         scale_key = scale_split[0]
       elif len(scale_split) > 2:
@@ -253,6 +271,7 @@ class TSClustering:
       if rule is not None:
         data.columns = data.loc[self.time_column]
         data = data.drop(self.time_column)
+      
       data = data.reset_index().rename(columns={"index": self.target_column}).set_index(self.target_column)
       data = data.dropna(axis=1, how='all')
       data = data.loc[:, (data != 0).any(axis=0)]
@@ -260,14 +279,122 @@ class TSClustering:
       are_columns_ascsending = (list(pd.to_datetime(data.columns)) == sorted(pd.to_datetime(data.columns)))
       if are_columns_ascsending == False:
         data.sort_values(axis=1, inplace=True)
+      
       print(f"the aggregated data size is {data.shape}")
-      save_data(data, save_dir=self.save_dir, file_name='aggregated_data.xlsx', index=True, rewrite=self.rewrite)
+      save_data(data, 
+                save_dir=self.save_dir, 
+                file_name=self.filename_data_after_agg, 
+                index=True, 
+                rewrite=self.rewrite)
     else:
       data = data.pivot(index=self.target_column, columns=self.time_column, values=self.value_column)
       print(f"the pivoted data size is {data.shape}")
     
     self.data = data
     return data
+
+  def aggregation(self, data=None): 
+    if data is None:
+      data = self.data.copy()
+    
+    print("-"*50)
+    print(f"the data size before aggregation is {data.shape}")
+    
+    if self.scale is not None:
+      rule = None  # Initialize 'rule' to avoid UnboundLocalError
+
+      def is_weekend(index):
+        return index.dayofweek >= 5
+
+      def is_workday(index):
+        return index.dayofweek < 5
+        
+      print(f"the data will be aggregated by {self.scale}")
+      
+      df_transposed = transpose_data(data)
+      
+      time_scales = {
+        'year': 'Y', 'month': 'M', 'week': 'W', 'day': 'D',
+        'early_morning': ('00:00', '06:00'), 'morning': ('06:00', '12:00'), 
+        'midday': ('12:00', '13:00'), 'afternoon': ('13:00', '18:00'), 
+        'evening': ('18:00', '00:00'),
+        'day_hour': None, 'hour_day': None  # Adding new scales
+      }
+
+      scale_split = self.scale.split('_')
+
+      if self.scale in ['day_hour', 'hour_day']:
+        scale_key = self.scale
+      else:
+        if len(scale_split) == 2:
+          scale_key = scale_split[0]
+        elif len(scale_split) > 2:
+          scale_key = '_'.join(scale_split[:-1])  # Join all but the last part for compound keys
+        else:
+          scale_key = self.scale
+      
+      if 'weekend' in self.scale:
+        filter_func = is_weekend
+        data = df_transposed[df_transposed.index.map(filter_func)]
+      elif 'workday' in self.scale:
+        filter_func = is_workday
+        data = df_transposed[df_transposed.index.map(filter_func)]
+      else:
+        data = df_transposed
+
+      if scale_key in ['day_hour', 'hour_day']:
+        if scale_key == 'day_hour':
+          grouped_data = data.groupby([data.index.dayofweek, data.index.hour]).sum()
+        else:  # hour_day
+          grouped_data = data.groupby([data.index.hour, data.index.dayofweek]).sum()
+
+        # Map day numbers to names
+        days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+
+        # Format the multi-index
+        new_index = grouped_data.index.map(lambda x: f'{days[x[1]]} {x[0]:02d}:00' if scale_key == 'hour_day' else f'{days[x[0]]} {x[1]:02d}:00')
+        grouped_data.index = new_index
+
+        # Assign the processed DataFrame back to data
+        data = grouped_data
+      
+      elif scale_key in time_scales:
+        rule = time_scales[scale_key]
+        if isinstance(rule, tuple):
+          data = data.between_time(*rule).resample('D').sum().reset_index()
+        else:
+          if rule is not None:
+            data = data.resample(rule).sum().reset_index()
+          else:
+            data = data.groupby(data.index.hour).sum()
+      
+      data = data.transpose()
+      
+      if rule is not None and scale_key not in ['day_hour', 'hour_day']:
+        data.columns = data.loc[self.time_column]
+        data = data.drop(self.time_column)
+      
+      data = data.reset_index().rename(columns={"index": self.target_column}).set_index(self.target_column)
+      data = data.dropna(axis=1, how='all')
+      data = data.loc[:, (data != 0).any(axis=0)]
+
+      are_columns_ascsending = (list(pd.to_datetime(data.columns, errors='coerce')) == sorted(pd.to_datetime(data.columns, errors='coerce')))
+      if are_columns_ascsending == False:
+        data.sort_values(axis=1, inplace=True)
+      
+      print(f"the aggregated data size is {data.shape}")
+      save_data(data, 
+                save_dir=self.save_dir, 
+                file_name=self.filename_data_after_agg, 
+                index=True, 
+                rewrite=self.rewrite)
+    else:
+      data = data.pivot(index=self.target_column, columns=self.time_column, values=self.value_column)
+      print(f"the pivoted data size is {data.shape}")
+    
+    self.data = data
+    return data
+
 
   def impute_data(self, data=None):
     # the data should be pivoted
@@ -280,12 +407,16 @@ class TSClustering:
     count_missing = data.isna().sum().sum()
     print(f"number of missing values in data: {count_missing}")
     if count_missing > 0:
-      if (self.save_dir / 'data_missing_value_filled.csv').exists() == False:
+      if (self.save_dir / self.filename_data_after_imputed).exists() == False:
         data = fill_missinng_data(data, self.save_dir, aggregation=self.scale, seed=self.seed) # the index of data is Date_Time, while the output index is Sensor_Name
-        save_data(data, save_dir=self.save_dir, file_name='data_missing_value_filled.csv', index=True, rewrite=self.rewrite)
+        save_data(data, 
+                  save_dir=self.save_dir, 
+                  file_name=self.filename_data_after_imputed, 
+                  index=True, 
+                  rewrite=self.rewrite)
       else:
-        print(f"load {self.save_dir / 'data_missing_value_filled.csv'}.....")
-        data = pd.read_csv(self.save_dir / 'data_missing_value_filled.csv')
+        print(f"load {self.save_dir / self.filename_data_after_imputed}.....")
+        data = pd.read_csv(self.save_dir / self.filename_data_after_imputed)
         data.set_index(self.target_column, inplace=True)
       
       data.columns.name = self.time_column
@@ -303,11 +434,17 @@ class TSClustering:
     else:
       columns = data.columns
       index = data.index
-
+    
     print("-"*50)
     print('normalising the data.....')
-    if (self.save_dir / 'scaled_data.csv').exists() == False:
+    if (self.save_dir / self.filename_data_after_norm).exists() == False:
       if self.normalise is not None:
+        save_data(data, 
+                  save_dir=self.save_dir, 
+                  file_name=self.filename_data_before_norm, 
+                  index=True, 
+                  rewrite=self.rewrite) # bug: the column name is wrongful
+        
         print("scaling the data.....")
         if self.normalise == 'meanvariance':
           data = TimeSeriesScalerMeanVariance().fit_transform(data.values)
@@ -316,10 +453,15 @@ class TSClustering:
 
         data = pd.DataFrame(data.squeeze(axis=-1), columns=columns, index=index)
         
-        save_data(data, save_dir=self.save_dir, file_name='scaled_data.csv', index=True, index_label=self.target_column, rewrite=self.rewrite)
+        save_data(data, 
+                  save_dir=self.save_dir, 
+                  file_name=self.filename_data_after_norm, 
+                  index=True, 
+                  index_label=self.target_column, 
+                  rewrite=self.rewrite)
     else:
       print("loading the scaled data.....")
-      data = pd.read_csv(self.save_dir / 'scaled_data.csv')
+      data = pd.read_csv(self.save_dir / self.filename_data_after_norm)
       data.set_index(self.target_column, inplace=True)
     
     print(f"the size of scaled data is {data.shape}")
@@ -331,23 +473,41 @@ class TSClustering:
     return data
     
   def optimal_k(self, data=None):
+    # 1. elbow points (line distance); 
+    # 2. elbow points (Kneedle); 
+    # 3. elbow points (autoelbow) TBD
+    # 4. aggregated rank for three evaluation scores
+
     if data is None:
       data = self.data.copy()
     
     print("-"*50)
     print('finding the optimal k.....')
     if (self.save_dir / 'best_k.xlsx').exists() == False:
-      self.best_k, self.df_scores = find_optimal_k(
-        data, self.save_dir, algorithm=self.algorithm, metric=self.model_configs['metric'],
-        seed=self.seed, verbose=self.verbose)
+      _, self.best_k_df, self.df_scores = find_optimal_k(
+        df=data, 
+        save_path=self.save_dir, 
+        algorithm=self.algorithm, 
+        **self.model_configs)
       plot_best_k(self.df_scores, self.save_dir)
     else:
-      self.df_scores = pd.read_excel(self.save_dir / 'best_k.xlsx')
-      agg_best_k = self.df_scores.iloc[0]['Number_of_Clusters']
-      df_scores = self.df_scores.sort_values(by='Number_of_Clusters')
-      elbow_point = df_scores['Number_of_Clusters'].iloc[find_elbow(df_scores['Distortion'].values.tolist())]
-      self.best_k = sorted(list(set([int(agg_best_k), int(elbow_point)])))
-      print(f'the best k are {self.best_k}')
+      self.df_scores = pd.read_excel(self.save_dir / 'best_k_scores.xlsx')
+      self.best_k_df = pd.read_excel(self.save_dir / 'best_k.xlsx')
+    
+    agg_best_k = int(self.best_k_df.agg_scores[0])
+    elbow_point_line_dist = int(self.best_k_df.elbow_point_line_dist[0])
+    elbow_point_kneedle = int(self.best_k_df.elbow_point_kneedle[0])
+    if self.best_k_methods == "kneedle":
+      self.best_k = [elbow_point_kneedle]
+    elif self.best_k_methods == "line_dist":
+      self.best_k = [elbow_point_line_dist]
+    elif self.best_k_methods == "agg_scores":
+      self.best_k = [agg_best_k]
+    elif self.best_k_methods == "all":
+      self.best_k = sorted(list(set([agg_best_k, elbow_point_line_dist, elbow_point_kneedle])))
+    else:
+      raise ValueError(f"self.best_k_methods should not be {self.best_k_methods}")
+    print(f'the best k are {self.best_k}')
   
   def plot_results(self, data=None, filename='cluster_assignments.png', plot_data_center=False):
     if data is None:
@@ -396,7 +556,7 @@ class TSClustering:
           
     plot_time_series_data_sensor(data, start_date, end_date, 
                                   save_path=self.save_dir, fig_name=fig_name,
-                                  agg=['raw'], with_shadow_missing=[True])
+                                  with_shadow_missing=[True])
   
   def load_image(self, save_dir=None, file_name=None, dpi=300):
     if save_dir is None:
@@ -538,19 +698,25 @@ class TSClustering:
     data = pd.DataFrame(transformed_data, index=data.index)
     plot_pca_heatmap(pca, data.index, save_dir=self.save_dir)
     print(f'the data size after dimensionality reduction: {data.shape}')
-    save_data(data, save_dir=self.save_dir, file_name='reduced_data.csv', index=True)
+    save_data(data, 
+              save_dir=self.save_dir, 
+              file_name=self.filename_data_after_dim_red, 
+              index=True)
 
     self.data = data
     
     return data
     
-  def consecutive_missing(self, data, threshold):
+  def consecutive_missing(self, data, threshold): # find consecutive missing values in a dataset.
     is_missing = data.isnull()
     consec_missing = (is_missing.groupby((is_missing != is_missing.shift()).cumsum())
                       .cumsum())
     return (consec_missing > threshold).any()
   
   def remove_sensors(self, data=None, threshold=0.5, consec_threshold=24*3):
+    # Rows with missing data exceeding the threshold are removed.
+    # It then applies consecutive_missing to each row and removes 
+    # those rows where consecutive missing values exceed consec_threshold.
     if data is None:
       data = self.data.copy()
 
@@ -569,11 +735,15 @@ class TSClustering:
     print(f"{counts - len(data)} sensors have been removed.")
 
     self.data = data
-    save_data(data, save_dir=self.save_dir, file_name='filtered_data.xlsx', index=True, rewrite=self.rewrite)
+    save_data(data, 
+              save_dir=self.save_dir, 
+              file_name=self.filename_data_after_filtered, 
+              index=True, 
+              rewrite=self.rewrite)
 
     return data
 
-  def process_data(self): # On going
+  def process_data(self): 
     # process the data before feeding them into model
 
     # the data should be in (M * N) shape, where M is the number of samples, 
@@ -610,6 +780,9 @@ class TSClustering:
       self.dimensionality_reduction()
 
   def training_each_k(self):
+    if self.data_raw is None:
+      self.data_raw = pd.read_csv(self.save_dir / self.filename_data_before_norm) # TBD: fix the minor bug
+
     best_k = self.best_k
     for self.best_k in best_k: # create model for each k
       self.best_k = int(self.best_k)
@@ -623,21 +796,26 @@ class TSClustering:
       self.evaluation()
       self.assign_clusters_and_save() # assign the labels (clusters) back to the original DataFrame
       plot_map(self.df_clusters, self.save_dir) # plot the clusters on the map
+      # TBD: change streep map
   
       # reset save_dir
       self.set_save_dir(self.root_save_dir)
     
     self.best_k = best_k
 
-  def offline_training(self):
+  def offline_training(self): # TBD
     self.set_save_dir(self.root_save_dir)
     self.save_configs()
-    if (self.save_dir / 'df_final.csv').exists() == False:
+    if (self.save_dir / self.filename_data_after_prep).exists() == False:
       self.process_data() # prepare data
-      save_data(self.data, save_dir=self.save_dir, file_name='df_final.csv', header=True, index=True)
+      save_data(self.data, 
+                save_dir=self.save_dir, 
+                file_name=self.filename_data_after_prep, 
+                header=True, 
+                index=True)
     else:
       print("loading the preprocessed data.....")
-      self.data = pd.read_csv(self.save_dir / 'df_final.csv')
+      self.data = pd.read_csv(self.save_dir / self.filename_data_after_prep)
       self.data.set_index(self.target_column, inplace=True)
     
     self.optimal_k() # find optimal k (for k-means)
@@ -663,12 +841,16 @@ class TSClustering:
       save_dir = original_save_dir / f"{time_span}"
       self.save_dir = set_path(save_dir)
 
-      if (self.save_dir / 'df_final.csv').exists() == False:
+      if (self.save_dir / self.filename_data_after_prep).exists() == False:
         self.process_data() # prepare data
-        save_data(self.data, save_dir=self.save_dir, file_name='df_final.csv', header=True, index=True)
+        save_data(self.data, 
+                  save_dir=self.save_dir, 
+                  file_name=self.filename_data_after_prep, 
+                  header=True, 
+                  index=True)
       else:
         print("loading the preprocessed data.....")
-        self.data = pd.read_csv(self.save_dir / 'df_final.csv')
+        self.data = pd.read_csv(self.save_dir / self.filename_data_after_prep)
         self.data.set_index(self.target_column, inplace=True)
       
       if not save_model.exists():
