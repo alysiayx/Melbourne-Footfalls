@@ -8,6 +8,7 @@ import seaborn as sns
 import matplotlib
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
+from matplotlib.ticker import FuncFormatter
 import plotly.express as px
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageColor
@@ -73,16 +74,20 @@ def plot_time_series_data(df, start_year, end_year, save_path, title_prefix="Tim
 def plot_time_series_data_sensor(df, start_year, end_year, 
                                  save_path, 
                                  title_prefix="Time Series of Sensor Hourly Counts", 
-                                 agg=['raw', 'monthly'],
                                  with_shadow_missing=[False, True],
                                  fig_name='time_series_data_sensor',
                                  rewrite=True):
   """
   Plot the time series data for sensors and save the figure.
-  the data should be provted (index are sensor_name and columns are data_time)
+  The data should be plotted (index are sensor_name and columns are data_time).
   """
-  if rewrite == True or not save_path.exists():
-    df.columns = pd.to_datetime(df.columns)
+  show_week = False
+  if rewrite or not Path(save_path).exists():
+    try:
+      df.columns = pd.to_datetime(df.columns)
+    except:
+      show_week = True  # the scale = 'day_hour' or 'hour_day'
+      pass
     print(df.shape)
     
     num_sensors = len(df.index)
@@ -91,62 +96,73 @@ def plot_time_series_data_sensor(df, start_year, end_year,
     cols = int(np.ceil(np.sqrt(num_sensors)))
     rows = int(np.ceil(num_sensors / cols))
 
-  for aggregation in agg:
-    if aggregation == 'monthly':
-      df_agg = df.transpose().resample('M').sum().transpose()  # Monthly aggregation
+    if num_sensors % cols == 1:
+      cols -= 2
+      rows = int(np.ceil(num_sensors / cols))
+
+  for shade_missing in with_shadow_missing:
+    fig, axes = plt.subplots(rows, cols, figsize=(40, 20), constrained_layout=True, sharex=True)
+    print(rows, cols)
+
+    if num_sensors == 1:
+      axes = np.array([[axes]])
+
+    for i, sensor in enumerate(df.index):
+      ax = axes[i // cols, i % cols]
+      data = df.loc[sensor]
+      ax.plot(data.index, data, lw=1)
+      title = sensor
+      new_title = title.split('|')[-1] if '|' in title else title
+      ax.set_title(new_title.strip(), fontsize=20)
+
+      if shade_missing:
+        missing_data = pd.isna(data)
+        if missing_data.any():
+          start_dates = data.index[missing_data & ~missing_data.shift(1).fillna(False)]
+          end_dates = data.index[missing_data & ~missing_data.shift(-1).fillna(False)]
+          for start, end in zip(start_dates, end_dates):
+            ax.add_patch(patches.Rectangle((start, ax.get_ylim()[0]), end - start, ax.get_ylim()[1] - ax.get_ylim()[0], fill=True, color='orange', alpha=0.2))
+
+      ax.tick_params(axis='y', labelsize=20)
+      
+      if i // cols != rows - 1:
+        ax.tick_params(axis='x', which='both', bottom=False, top=False, labelbottom=False)
+      else:
+        ax.tick_params(axis='x', labelsize=20, rotation=90)
+      
+      if show_week:
+        days = [t.split()[0] for t in data.index]
+        day_indices = [idx for idx, (d1, d2) in enumerate(zip(days, days[1:])) if d1 != d2]
+        day_indices.insert(0, 0)  # Include the first day
+
+        # Set ticks and labels only at these indices
+        ax.set_xticks([data.index[k] for k in day_indices])
+        ax.set_xticklabels([days[k] for k in day_indices], rotation=90, ha='center')
+
+        # ax.xaxis.set_major_locator(plt.MaxNLocator(7))
+       
+    for i in range(num_sensors, rows * cols):
+      axes[i // cols, i % cols].axis('off')
+
+    if start_year != end_year:
+      fig.suptitle(f'{title_prefix} for {start_year}-{end_year}', fontsize=25)
     else:
-      df_agg = df
+      fig.suptitle(f'{title_prefix} for {start_year}', fontsize=25)
 
-    for shade_missing in with_shadow_missing:
-      fig, axes = plt.subplots(rows, cols, figsize=(40, 20), constrained_layout=True, sharex=True)
-      print(rows, cols)
-
-      if num_sensors == 1:
-        axes = np.array([[axes]])
-
-      for i, sensor in enumerate(df_agg.index):
-        ax = axes[i // cols, i % cols]
-        data = df_agg.loc[sensor]
-        ax.plot(data.index, data, lw=1)
-        title = sensor
-        new_title = title.split('|')[-1] if '|' in title else title
-        ax.set_title(new_title.strip(), fontsize=20)
-
-        if shade_missing:
-          if aggregation == 'raw':
-            missing_data = pd.isna(data)
-            if missing_data.any():
-              start_dates = data.index[missing_data & ~missing_data.shift(1).fillna(False)]
-              end_dates = data.index[missing_data & ~missing_data.shift(-1).fillna(False)]
-              for start, end in zip(start_dates, end_dates):
-                ax.add_patch(patches.Rectangle((start, ax.get_ylim()[0]), end - start, ax.get_ylim()[1] - ax.get_ylim()[0], fill=True, color='orange', alpha=0.2))
-          else:
-            missing_data_ratio = df.transpose().resample('M').apply(lambda x: x.isna().sum() / len(x)).transpose()
-            to_shade = missing_data_ratio.loc[sensor] == 1.0
-            for month, shade in zip(data.index, to_shade):
-                if shade:
-                    ax.add_patch(patches.Rectangle((month, ax.get_ylim()[0]), np.timedelta64(1, 'M'), ax.get_ylim()[1] - ax.get_ylim()[0], fill=True, color='orange', alpha=0.2))
-
-        ax.tick_params(axis='y', labelsize=20)
-        if i // cols != rows - 1:
-          ax.tick_params(axis='x', which='both', bottom=False, top=False, labelbottom=False)
-        else:
-          ax.tick_params(axis='x', labelsize=20, rotation=90)
-      for i in range(num_sensors, rows * cols):
-        axes[i // cols, i % cols].axis('off')
-
-      fig.suptitle(f'{title_prefix} for {start_year}-{end_year} ({aggregation})', fontsize=25)
-
-      suffix = f'{aggregation}_with_shade' if shade_missing else f'{aggregation}_without_shade'
+    suffix = 'with_shade' if shade_missing else 'without_shade'
+    if start_year != end_year:
       final_path = os.path.join(save_path, f'{fig_name}_{start_year}_{end_year}_{suffix}.png')
-      plt.savefig(final_path, bbox_inches='tight', pad_inches=0.1)
-      plt.close()
+    else:
+      final_path = os.path.join(save_path, f'{fig_name}_{start_year}_{suffix}.png')
+
+    plt.savefig(final_path, bbox_inches='tight', pad_inches=0.1)
+    plt.close()
     if Path(final_path).exists():
-        print(f"{final_path} updated.")
+      print(f"{final_path} updated.")
     else:
       print(f"{final_path} saved.")
   else:
-    if Path(save_path).exists(): # TBD
+    if Path(save_path).exists():
       print(f"{save_path} exists and will not be updated.")
 
 def plot_time_series_data_iterative(df, save_path, start_year=None, end_year=None, aggregate_by_month=False, rewrite=True):
@@ -239,49 +255,92 @@ def plot_best_k(df_scores, save_path):
   
   plt.tight_layout()
   plt.subplots_adjust(hspace=0.3)
-  plt.savefig(save_path / 'evaluation_metrics_plot.png', dpi=800, bbox_inches='tight', pad_inches=0.1)
+  plt.savefig(save_path / 'plot_best_k.png', dpi=800, bbox_inches='tight', pad_inches=0.1)
   plt.show()
 
-def plot_map(data, save_path):
+def plot_map(data, save_path, save_name=None):
   df = data.copy()
 
-  # Group by Sensor_Name and Cluster
-  try:
-    grouped_df = df.groupby(['Sensor_Name', 'Clusters'])
-  except:
-    grouped_df = df.groupby(['New_Sensor_Name', 'Clusters'])
+  # Group by Sensor_Name and Cluster (to be updated, I assume the Sensor_Name is the target)
+  group_columns = ['Sensor_Name', 'Clusters'] if 'Sensor_Name' in df.columns else ['New_Sensor_Name', 'Clusters']
+  grouped_df = df.groupby(group_columns)
 
   # Create a map centered around the mean coordinates
   m = folium.Map(location=[df['Latitude'].mean(), df['Longitude'].mean()], zoom_start=13)
+  m_png = folium.Map(width=900, 
+                     height=900, 
+                     location=[df['Latitude'].mean(), df['Longitude'].mean()], 
+                     tiles='CartoDB positron',
+                     zoom_start=15, 
+                     zoom_control=False)
 
-  # Define a list of colors (from the accepted color list)
   colors = ['red', 'blue', 'green', 'purple', 'orange', 'darkred', 'lightred', 'beige', 'darkblue', 'darkgreen']
 
-  # Define a list of icon types
-  icons = ['info-sign', 'cloud', 'star', 'heart', 'flag', 'euro', 'ok', 'remove-sign', 'flash', 'question-sign']
+  sorted_df = df.sort_values(by=['Sensor_Name'])
+  sensor_color_mapping = {sensor: colors[i % len(colors)] for i, sensor in enumerate(sorted_df['Sensor_Name'].unique())}
+
+  # Create a Cluster-to-Color mapping based on the first sensor in each cluster
+  cluster_color_mapping = {}
+  for cluster, group_data in sorted_df.groupby('Clusters'):
+    first_sensor = group_data['Sensor_Name'].iloc[0]
+    cluster_color_mapping[cluster] = sensor_color_mapping[first_sensor]
 
   # Loop through the groups (Sensor_Name and Cluster)
   for (sensor_name, cluster), group_data in grouped_df:
-      # Take mean latitude and longitude
+
       lat = group_data['Latitude'].mean()
       long = group_data['Longitude'].mean()
 
-      # Get the color and icon for this cluster
-      color = colors[cluster % len(colors)]
-      icon_type = icons[cluster // len(colors) % len(icons)]
+      # color = colors[cluster % len(colors)] # assign colors based on the cluster
+      color = cluster_color_mapping[cluster] # or assign consistant colors based on the sensor name 
 
-      # Create the marker
       folium.Marker(
           [lat, long],
           popup=f"Sensor: {sensor_name}, Cluster: {cluster}",
-          icon=folium.Icon(color=color, icon=icon_type, prefix='glyphicon')
+          icon=folium.Icon(color=color, icon='star')
       ).add_to(m)
 
-  # Save the map
-  m.save(save_path / 'map.html')
-  print("map saved.")
+      folium.Marker(
+          [lat, long],
+          popup=f"Sensor: {sensor_name}, Cluster: {cluster}",
+          icon=folium.Icon(color=color, icon='star')
+      ).add_to(m_png)
+
+      ## or using circle marker
+      # folium.CircleMarker(
+      #   location=[lat, long],
+      #   radius=10, 
+      #   popup=f"Sensor: {sensor_name}, Cluster: {cluster}",
+      #   color=color,
+      #   fill=True,
+      #   fill_color=color
+      # ).add_to(m_png)
+  
+  latitudes, longitudes = df['Latitude'], df['Longitude']
+
+  m.fit_bounds([(min(latitudes), min(longitudes)), (max(latitudes), max(longitudes))])
+  m_png.fit_bounds([(min(latitudes), min(longitudes)), (max(latitudes), max(longitudes))])
+
+  img_data = m_png._to_png(5)
+  img = Image.open(io.BytesIO(img_data))
+
+  if save_name is None:
+    save_name = 'map'
+
+  html_file_path = save_path / f'{save_name}.html'
+  png_file_path = save_path / f'{save_name}.png'
+
+  # Save the map as HTML
+  m.save(str(html_file_path))
+  print(f"{html_file_path} saved.")
+
+  # Save the map as PNG
+  img.save(str(png_file_path))
+  print(f"{png_file_path} saved.")
 
 def plot_pca_heatmap(pca, original_features, save_dir):
+  # bug: the x-label may get overlapped
+
   components = pca.components_
   
   if components.shape[0] <= 20:
@@ -405,10 +464,19 @@ def plot_map_gradient_color(data, save_path):
   print("map.png saved.")
 
 if __name__ =='__main__':
+  ## test case 1:
   # df_scores = pd.read_excel('find_best_k.xlsx') 
   # plot_best_k(df_scores, './')
 
-  clusters = pd.read_csv('../clusters_raw.csv') 
-  clusters_ = clusters.drop(columns=['Latitude', 'Longitude', 'Clusters']).set_index('Sensor_Name')
-  clusters['total_counts'] = clusters_.sum(axis=1).values
-  plot_map_gradient_color(clusters, Path('../'))
+  ## test case 2:
+  # clusters = pd.read_csv('../clusters_raw.csv') 
+  # clusters_ = clusters.drop(columns=['Latitude', 'Longitude', 'Clusters']).set_index('Sensor_Name')
+  # clusters['total_counts'] = clusters_.sum(axis=1).values
+  # plot_map_gradient_color(clusters, Path('../'))
+
+  ## test case 3:
+  temp_save_path = Path("../temp")
+  test_df1 = pd.read_csv(temp_save_path.joinpath('clusters_test1.csv'))
+  test_df2 = pd.read_csv(temp_save_path.joinpath('clusters_test2.csv'))
+  color_mapping = plot_map(test_df1, temp_save_path, 'map1')
+  color_mapping = plot_map(test_df2, temp_save_path, 'map2')
