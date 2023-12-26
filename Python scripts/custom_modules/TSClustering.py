@@ -207,92 +207,6 @@ class TSClustering:
 
     return data
 
-  # def aggregation(self, data=None): 
-    # the data is pivoted after this step
-    if data is None:
-      data = self.data.copy()
-    
-    print("-"*50)
-    print(f"the data size before aggregation is {data.shape}")
-    
-    if self.scale is not None:
-      def is_weekend(index):
-        return index.dayofweek >= 5
-
-      def is_workday(index):
-        return index.dayofweek < 5
-        
-      print(f"the data will be aggregated by {self.scale}")
-      
-      df_transposed = transpose_data(data)
-      
-      time_scales = {
-        'year': 'Y', 'month': 'M', 'week': 'W', 'day': 'D',
-        'early_morning': ('00:00', '06:00'), 'morning': ('06:00', '12:00'), 
-        'midday': ('12:00', '13:00'), 'afternoon': ('13:00', '18:00'), 
-        'evening': ('18:00', '00:00')
-      }
-
-      scale_split = self.scale.split('_')
-
-      if len(scale_split) == 2:
-        scale_key = scale_split[0]
-      elif len(scale_split) > 2:
-        scale_key = '_'.join(scale_split[:-1])  # Join all but the last part for compound keys
-      else:
-        scale_key = self.scale
-      
-      if 'weekend' in self.scale:
-        filter_func = is_weekend
-        data = df_transposed[df_transposed.index.map(filter_func)]
-      elif 'workday' in self.scale:
-        filter_func = is_workday
-        data = df_transposed[df_transposed.index.map(filter_func)]
-      else:
-        data = df_transposed
-      
-      if scale_key in time_scales:
-        rule = time_scales[scale_key]
-      else:
-        if scale_key != 'hour':
-          rule = 'D'
-        else:
-          rule = None
-        
-      if isinstance(rule, tuple):
-        data = data.between_time(*rule).resample('D').sum().reset_index()
-      else:
-        if rule is not None:
-          data = data.resample(rule).sum().reset_index()
-        else:
-          data = data.groupby(data.index.hour).sum()
-          
-      data = data.transpose()
-      if rule is not None:
-        data.columns = data.loc[self.time_column]
-        data = data.drop(self.time_column)
-      
-      data = data.reset_index().rename(columns={"index": self.target_column}).set_index(self.target_column)
-      data = data.dropna(axis=1, how='all')
-      data = data.loc[:, (data != 0).any(axis=0)]
-
-      are_columns_ascsending = (list(pd.to_datetime(data.columns)) == sorted(pd.to_datetime(data.columns)))
-      if are_columns_ascsending == False:
-        data.sort_values(axis=1, inplace=True)
-      
-      print(f"the aggregated data size is {data.shape}")
-      save_data(data, 
-                save_dir=self.save_dir, 
-                file_name=self.filename_data_after_agg, 
-                index=True, 
-                rewrite=self.rewrite)
-    else:
-      data = data.pivot(index=self.target_column, columns=self.time_column, values=self.value_column)
-      print(f"the pivoted data size is {data.shape}")
-    
-    self.data = data
-    return data
-
   def aggregation(self, data=None): 
     if data is None:
       data = self.data.copy()
@@ -394,7 +308,6 @@ class TSClustering:
     
     self.data = data
     return data
-
 
   def impute_data(self, data=None):
     # the data should be pivoted
@@ -584,10 +497,10 @@ class TSClustering:
     df = self.data.reset_index().rename(columns={'index': self.target_column})
     df_clusters = pd.merge(df, clusters, on=self.target_column, how='left')
 
-    df_raw = self.data_raw.reset_index().rename(columns={'index': self.target_column})
-    df_clusters_raw = pd.merge(df_raw, clusters, on=self.target_column, how='left')
-
+    df_raw = self.data_raw.reset_index().rename(columns={'index': self.target_column}) # the self.target_column is row index
     df_raw_norm = self.data_raw_norm.reset_index().rename(columns={'index': self.target_column})
+    
+    df_clusters_raw = pd.merge(df_raw, clusters, on=self.target_column, how='left')
     df_clusters_raw_norm = pd.merge(df_raw_norm, clusters, on=self.target_column, how='left')
 
     sensor_locations_ = self.sensor_locations.copy()[[self.target_column, 'Latitude', 'Longitude']]
@@ -781,8 +694,11 @@ class TSClustering:
 
   def training_each_k(self):
     if self.data_raw is None:
-      self.data_raw = pd.read_csv(self.save_dir / self.filename_data_before_norm) # TBD: fix the minor bug
+      self.data_raw = pd.read_csv(self.save_dir / self.filename_data_before_norm, index_col=self.target_column)
 
+    if self.data_raw_norm is None:
+      self.data_raw_norm = pd.read_csv(self.save_dir / self.filename_data_after_norm, index_col=self.target_column)
+    
     best_k = self.best_k
     for self.best_k in best_k: # create model for each k
       self.best_k = int(self.best_k)
@@ -796,7 +712,6 @@ class TSClustering:
       self.evaluation()
       self.assign_clusters_and_save() # assign the labels (clusters) back to the original DataFrame
       plot_map(self.df_clusters, self.save_dir) # plot the clusters on the map
-      # TBD: change streep map
   
       # reset save_dir
       self.set_save_dir(self.root_save_dir)
