@@ -39,23 +39,25 @@ class TSClustering:
       'early_morning', 'morning', 'midday', 'afternoon', 'evening'
       'workday', 'weekend',
 
-    - model: 
+    - model: str
       "kmeans", "kshape", "kernelkmeans", "birch", "ensemble"
+    - K: list; valid for k-means variants
+      [min k values, max k values]
     - time_span: float, int or list
       "normal" (before 2020), 
       2019 (or other single year), 
       [start_date, end_date] or None
-    - normalise: 
+    - normalise: str
       "meanvariance", "minmax" or None
-    - feature_extraction: 
+    - feature_extraction: bool
       True, False or None
-    - dim_reduction: 
+    - dim_reduction: str
       'PCA', 'IPCA' or None
-    - order_of_impute_agg: 
+    - order_of_impute_agg: str
       "impute_agg_norm", "impute_norm_agg", "agg_impute_norm", or "agg_norm_impute"
-    - remove_missing_data:
+    - remove_missing_data: bool
       True or False
-    - best_k_methods: valid for k-means
+    - best_k_methods: str; valid for k-means variants
       "all", "kneedle", "line_dist", "autoelbow", "agg_scores"
     """
     self.raw_data = data.copy() # original row data
@@ -81,6 +83,7 @@ class TSClustering:
       "model_configs": None,
       "best_k": None,
       "best_k_methods": 'kneedle',
+      "K": [2, 10],
       "df_scores": None, # may remove later
       "df_results": None,
       "feature_extraction": None,
@@ -215,7 +218,7 @@ class TSClustering:
     print(f"the data size before aggregation is {data.shape}")
     
     if self.scale is not None:
-      rule = None  # Initialize 'rule' to avoid UnboundLocalError
+      rule = None 
 
       def is_weekend(index):
         return index.dayofweek >= 5
@@ -232,7 +235,7 @@ class TSClustering:
         'early_morning': ('00:00', '06:00'), 'morning': ('06:00', '12:00'), 
         'midday': ('12:00', '13:00'), 'afternoon': ('13:00', '18:00'), 
         'evening': ('18:00', '00:00'),
-        'day_hour': None, 'hour_day': None  # Adding new scales
+        'day_hour': None, 'hour_day': None
       }
 
       scale_split = self.scale.split('_')
@@ -243,7 +246,7 @@ class TSClustering:
         if len(scale_split) == 2:
           scale_key = scale_split[0]
         elif len(scale_split) > 2:
-          scale_key = '_'.join(scale_split[:-1])  # Join all but the last part for compound keys
+          scale_key = '_'.join(scale_split[:-1])
         else:
           scale_key = self.scale
       
@@ -276,11 +279,10 @@ class TSClustering:
         rule = time_scales[scale_key]
         if isinstance(rule, tuple):
           data = data.between_time(*rule).resample('D').sum().reset_index()
-        else:
-          if rule is not None:
-            data = data.resample(rule).sum().reset_index()
-          else:
-            data = data.groupby(data.index.hour).sum()
+        else:            
+          data = data.resample(rule).sum().reset_index()
+      else:
+        data = data.groupby(data.index.hour).sum()
       
       data = data.transpose()
       
@@ -388,7 +390,7 @@ class TSClustering:
   def optimal_k(self, data=None):
     # 1. elbow points (line distance); 
     # 2. elbow points (Kneedle); 
-    # 3. elbow points (autoelbow) TBD
+    # 3. elbow points (autoelbow) # not well-known
     # 4. aggregated rank for three evaluation scores
 
     if data is None:
@@ -401,6 +403,7 @@ class TSClustering:
         df=data, 
         save_path=self.save_dir, 
         algorithm=self.algorithm, 
+        K=self.K,
         **self.model_configs)
       plot_best_k(self.df_scores, self.save_dir)
     else:
@@ -410,6 +413,7 @@ class TSClustering:
     agg_best_k = int(self.best_k_df.agg_scores[0])
     elbow_point_line_dist = int(self.best_k_df.elbow_point_line_dist[0])
     elbow_point_kneedle = int(self.best_k_df.elbow_point_kneedle[0])
+    
     if self.best_k_methods == "kneedle":
       self.best_k = [elbow_point_kneedle]
     elif self.best_k_methods == "line_dist":
@@ -718,7 +722,7 @@ class TSClustering:
     
     self.best_k = best_k
 
-  def offline_training(self): # TBD
+  def offline_training(self):
     self.set_save_dir(self.root_save_dir)
     self.save_configs()
     if (self.save_dir / self.filename_data_after_prep).exists() == False:
