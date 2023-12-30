@@ -1,4 +1,5 @@
 import os
+import re
 import pickle
 import tsfel
 import json
@@ -235,21 +236,12 @@ class TSClustering:
         'early_morning': ('00:00', '06:00'), 'morning': ('06:00', '12:00'), 
         'midday': ('12:00', '13:00'), 'afternoon': ('13:00', '18:00'), 
         'evening': ('18:00', '00:00'),
+        'weekend': 'D', 'workday': 'D',
         'day_hour': None, 'hour_day': None
-      }
-
-      scale_split = self.scale.split('_')
-
-      if self.scale in ['day_hour', 'hour_day']:
-        scale_key = self.scale
-      else:
-        if len(scale_split) == 2:
-          scale_key = scale_split[0]
-        elif len(scale_split) > 2:
-          scale_key = '_'.join(scale_split[:-1])
-        else:
-          scale_key = self.scale
+      } # 'scale_key' and corresponding 'rule'
       
+      scale_key = re.sub(r"_(workday|weekend)$", "", self.scale) # remove '_weekend' and '_workday'
+
       if 'weekend' in self.scale:
         filter_func = is_weekend
         data = df_transposed[df_transposed.index.map(filter_func)]
@@ -281,7 +273,7 @@ class TSClustering:
           data = data.between_time(*rule).resample('D').sum().reset_index()
         else:            
           data = data.resample(rule).sum().reset_index()
-      else:
+      elif scale_key == 'hour':
         data = data.groupby(data.index.hour).sum()
       
       data = data.transpose()
@@ -294,11 +286,12 @@ class TSClustering:
       data = data.dropna(axis=1, how='all')
       data = data.loc[:, (data != 0).any(axis=0)]
 
-      are_columns_ascsending = (list(pd.to_datetime(data.columns, errors='coerce')) == sorted(pd.to_datetime(data.columns, errors='coerce')))
-      if are_columns_ascsending == False:
-        data.sort_values(axis=1, inplace=True)
+      # are_columns_ascsending = (list(pd.to_datetime(data.columns, errors='coerce')) == sorted(pd.to_datetime(data.columns, errors='coerce')))
+      # if are_columns_ascsending == False:
+      #   data.sort_values(axis=1, inplace=True)
       
       print(f"the aggregated data size is {data.shape}")
+      
       save_data(data, 
                 save_dir=self.save_dir, 
                 file_name=self.filename_data_after_agg, 
