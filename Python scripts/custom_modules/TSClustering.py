@@ -3,6 +3,7 @@ import re
 import pickle
 import tsfel
 import json
+import glob
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -18,7 +19,7 @@ from sklearn.metrics import silhouette_score as silhouette_score_skl
 from sklearn.metrics import davies_bouldin_score, calinski_harabasz_score
 from sklearn.decomposition import PCA, IncrementalPCA
 
-from tsfresh import extract_features
+from tsfresh import extract_features as tsfresh_extract_features
 
 # import autocluster
 # from autocluster import AutoCluster, get_evaluator, MetafeatureMapper
@@ -32,14 +33,14 @@ class TSClustering:
   def __init__(self, data: pd.DataFrame, sensor_locations: pd.DataFrame, **configs):
     """
     Parameters:
-    - data: by default is unpivot (wide format) hourly footfall data
-    - metric: 
+    - data: dataframe
+      by default is unpivot (wide format) hourly footfall data
+    - metric:  None or str
       "euclidean", "dtw", "softdtw" or None
-    - scale: None or
+    - scale: None or str
       "day", 'week', 'month', 'year', 'hour'
       'early_morning', 'morning', 'midday', 'afternoon', 'evening'
       'workday', 'weekend',
-
     - model: str
       "kmeans", "kshape", "kernelkmeans", "birch", "ensemble"
     - K: list; valid for k-means variants
@@ -51,7 +52,7 @@ class TSClustering:
     - normalise: str
       "meanvariance", "minmax" or None
     - feature_extraction: bool
-      True, False or None
+      True, False
     - dim_reduction: str
       'PCA', 'IPCA' or None
     - order_of_impute_agg: str
@@ -60,11 +61,14 @@ class TSClustering:
       True or False
     - best_k_methods: str; valid for k-means variants
       "all", "kneedle", "line_dist", "autoelbow", "agg_scores"
+    - naming_pattern: str; naming pattern of each exp.
+      "details" or "num"
     """
     self.raw_data = data.copy() # original row data
     self.data = data.copy() # data during pre-processed
     self.data_raw = None # store the data before normalisation
     self.data_raw_norm = None # store the data after normalisation
+    self.data_features = None # store the features extracted from data
     self.sensor_locations = sensor_locations
     self.root_save_dir = configs.get('save_dir', './')
 
@@ -85,18 +89,21 @@ class TSClustering:
       "best_k": None,
       "best_k_methods": 'kneedle',
       "K": [2, 10],
+      "n_components": 0.95,
       "df_scores": None, # may remove later
       "df_results": None,
-      "feature_extraction": None,
+      "feature_extraction": False,
       "dim_reduction": None,
       "remove_missing_data": False,
       "save_dir": "./",
+      "naming_pattern": "details",
       "filename_data_cut": "data.csv", # the filename for data after selecting time span
       "filename_data_after_agg": "data_aggregated.csv",
       "filename_data_before_norm": "data_before_norm.csv",
       "filename_data_after_norm": "data_scaled.csv",
       "filename_data_after_filtered": "data_filtered.csv", # the filename for data after removing sensors
       "filename_data_after_imputed": 'data_missing_value_filled.csv',
+      "filename_data_features": 'data_features.csv',
       "filename_data_after_dim_red": 'data_reduced.csv',
       "filename_data_after_prep": 'data_final.csv',
       "seed": 42,
@@ -142,9 +149,12 @@ class TSClustering:
       print(f"model_configs is set as: {self.model_configs}")
       print('model configs saved.')
     
-  def set_save_dir(self, save_dir=None):
+  def set_save_dir(self, save_dir=None, naming_pattern=None):
     if save_dir is None:
       save_dir = self.root_save_dir
+    
+    if naming_pattern is None:
+      naming_pattern = self.naming_pattern
     
     if self.algorithm in ['kmeans', 'kshape']:
       model_name = f"{self.model_configs['metric']}_{self.algorithm}"
@@ -152,10 +162,16 @@ class TSClustering:
       model_name = f"{self.model_configs['kernel']}_{self.algorithm}"
     elif self.algorithm in ['birch']:
       model_name = self.algorithm
-      
-    path = f"{model_name}_norm-{self.normalise}_scale-{self.scale}_span-{self.time_span}/" \
-        f"order-{self.order_of_impute_agg_norm}_fea-{self.feature_extraction}_dr-{self.dim_reduction}"
     
+    if naming_pattern == 'details':
+      path = f"{model_name}_Norm-{self.normalise}_Scale-{self.scale}_Span-{self.time_span}/" \
+            f"Order-{self.order_of_impute_agg_norm}_FeatExt-{self.feature_extraction}_DimRed-{self.dim_reduction}"
+    elif naming_pattern == 'num':
+      existing_folders = glob.glob(os.path.join(save_dir, '[0-9]*'))
+      highest_num = max([int(os.path.basename(f)) for f in existing_folders if os.path.basename(f).isdigit()], default=0)
+      next_folder_num = highest_num + 1
+      path = f"{next_folder_num:03d}"
+
     save_dir = save_dir / path
     self.save_dir = set_path(save_dir)
   
@@ -518,13 +534,21 @@ class TSClustering:
   def evaluation(self):
     print("-"*50)
     eva_scores = {
-      'Silhouette Score': [silhouette_score_skl(self.data, self.model.labels_)],
-      'Davies-Bouldin Score': [davies_bouldin_score(self.data, self.model.labels_)],
-      'Calinski-Harabasz Score': [calinski_harabasz_score(self.data, self.model.labels_)]
+      'Silhouette Score (postPCA)': [silhouette_score_skl(self.data, self.model.labels_)],
+      'Davies-Bouldin Score (postPCA)': [davies_bouldin_score(self.data, self.model.labels_)],
+      'Calinski-Harabasz Score (postPCA)': [calinski_harabasz_score(self.data, self.model.labels_)],
+      'Silhouette Score (raw)': [silhouette_score_skl(self.data_raw_norm, self.model.labels_)],
+      'Davies-Bouldin Score (raw)': [davies_bouldin_score(self.data_raw_norm, self.model.labels_)],
+      'Calinski-Harabasz Score (raw)': [calinski_harabasz_score(self.data_raw_norm, self.model.labels_)]
     }
 
+    if self.feature_extraction is True:
+      eva_scores['Silhouette Score (fea)'] = silhouette_score_skl(self.data_features, self.model.labels_),
+      eva_scores['Davies-Bouldin Score (fea)'] = davies_bouldin_score(self.data_features, self.model.labels_),
+      eva_scores['Calinski-Harabasz Score (fea)'] = calinski_harabasz_score(self.data_features, self.model.labels_),
+
     self.df_results = pd.DataFrame(eva_scores)
-    print_table(self.df_results)
+    print_table(self.df_results.T)
     save_data(self.df_results, save_dir=self.save_dir, file_name='evaluation_scores.xlsx')
 
   def create_model(self, data=None):
@@ -559,36 +583,86 @@ class TSClustering:
       self.model = self.model.from_pickle(save_model)
       self.y_pred = self.model.predict(data.values)
 
-  def extract_features(self, drop_nan=True): # TBD
+  def extract_features(self, data=None, drop_nan=True): # TBD
+    if data is None:
+      data = self.data.copy()
+
     print("-"*50)
     print("extract features from data.....")
-    self.data.reset_index(inplace=True)
-    df_melted = self.data.melt(id_vars=self.target_column, var_name=self.time_column, value_name=self.value_column)
-    df_melted[self.time_column] = pd.to_datetime(df_melted[self.time_column], errors='coerce') 
-    df_melted = df_melted.dropna(subset=[self.time_column])
-    df_melted = df_melted.sort_values(by=[self.target_column, self.time_column])
 
-    self.data = extract_features(df_melted, column_id=self.target_column, column_sort=self.time_column)
+    if (self.save_dir / self.filename_data_features).exists() == False:
+      # melt the data
+      data.reset_index(inplace=True)
+      df_melted = pd.melt(data, id_vars=self.target_column, var_name=self.time_column, value_name=self.value_column)
+      # df_melted[self.time_column] = pd.to_datetime(df_melted[self.time_column], errors='coerce') 
+      df_melted = df_melted.dropna(subset=[self.time_column])
+      # df_melted = df_melted.sort_values(by=[self.target_column, self.time_column])
+      X_tsfresh = tsfresh_extract_features(df_melted, column_id=self.target_column, column_sort=self.time_column)
+      X_tsfresh.replace([np.inf, -np.inf], np.nan, inplace=True)
+      X_tsfresh = X_tsfresh.fillna(0)
 
-    # cfg = tsfel.get_features_by_domain()
-    # features_list = []
-    # for sensor in df_melted[self.target_column].unique():
-    #   sensor_data = df_melted[df_melted[self.target_column] == sensor]
-    #   features = tsfel.time_series_features_extractor(cfg, sensor_data[self.value_column])
-    #   features[self.target_column] = sensor  # add sensor name to the features DataFrame
-    #   features_list.append(features)
+      cfg = tsfel.get_features_by_domain()
+      X_tsfel = pd.DataFrame() 
+      for i, sensor in enumerate(df_melted[self.target_column].unique()):
+        # print(i, sensor)
+        sensor_data = df_melted[df_melted[self.target_column] == sensor]
+        features = tsfel.time_series_features_extractor(cfg, sensor_data[self.value_column].to_frame())
+        features[self.target_column] = sensor
+        X_tsfel = pd.concat([X_tsfel, features], ignore_index=True)
+    
+      X_tsfel.replace([np.inf, -np.inf], np.nan, inplace=True)
+      X_tsfel = X_tsfel.fillna(0)
 
-    # self.data = pd.concat(features_list, ignore_index=True)
+      if drop_nan == True:
+        print(f"tsfresh: the feature extracted from data has shape {X_tsfresh.shape} before drop NaNs")
+        cols_to_drop = X_tsfresh.columns[(X_tsfresh == 0).all()]
+        X_tsfresh = X_tsfresh.drop(columns=cols_to_drop)
+        print(f"tsfresh: now the feature extracted from data has shape {X_tsfresh.shape}")
+        
+        print(f"tsfel: the feature extracted from data has shape {X_tsfel.shape} before drop NaNs")
+        cols_to_drop = X_tsfel.columns[(X_tsfel == 0).all()]
+        X_tsfel = X_tsfel.drop(columns=cols_to_drop)
+        print(f"tsfel: now the feature extracted from data has shape {X_tsfel.shape}")
+      
+      X_tsfresh.rename(columns=lambda x: x.replace('Hourly_Counts__', 'tsfresh_'), inplace=True)
+      X_tsfel.rename(columns=lambda x: x.replace('Hourly_Counts_', 'tsfel_'), inplace=True)
 
-    self.data.replace([np.inf, -np.inf], np.nan, inplace=True)
-    self.data = self.data.fillna(0)
-    if drop_nan == True:
-      print(f"the feature extracted from data has shape {self.data.shape} before drop NaNs")
-      cols_to_drop = self.data.columns[(self.data == 0).all()]
-      self.data = self.data.drop(columns=cols_to_drop)
+      X_tsfel.set_index(self.target_column, inplace=True)
+      X_tsfresh.index.name = self.target_column
 
-    print(f"now the feature extracted from data has shape {self.data.shape}")
-    save_data(self.data, save_dir=self.save_dir, file_name='extracted_features.xlsx', rewrite=self.rewrite)
+      save_data(X_tsfresh, 
+                save_dir=self.save_dir, 
+                file_name=self.filename_data_features.replace('.', '_tsfresh.'), 
+                index=True,
+                rewrite=self.rewrite)
+      save_data(X_tsfel, 
+                save_dir=self.save_dir, 
+                file_name=self.filename_data_features.replace('.', '_tsfel.'), 
+                index=True,
+                rewrite=self.rewrite)
+
+      df_features = pd.merge(X_tsfresh, X_tsfel, left_index=True, right_index=True)
+      duplicate_columns = df_features.T.duplicated()
+
+      for col in df_features.columns[duplicate_columns]:
+          duplicates = [dup_col for dup_col in df_features.columns if df_features[col].equals(df_features[dup_col]) and dup_col != col]
+          print(f"Column '{col}' is duplicated in columns: {', '.join(duplicates)}")
+      
+      df_features_cleaned = df_features.loc[:, ~duplicate_columns]
+
+      self.data_features = df_features_cleaned.copy()
+      self.data = df_features_cleaned.copy()
+      print(f"Now the feature extracted from data has shape {self.data.shape}")
+
+      save_data(self.data, 
+                save_dir=self.save_dir, 
+                file_name=self.filename_data_features, 
+                index=True,
+                rewrite=self.rewrite)
+    else:
+      df_features = pd.read_csv(self.filename_data_features, index_col=self.target_column)
+      self.data = df_features.copy()
+      self.data_features = df_features.copy()
 
   def dimensionality_reduction(self, data=None):
     if data is None:
@@ -597,10 +671,9 @@ class TSClustering:
     print('-'*50)
     print(f'Now applying {self.dim_reduction} to data')
     if self.dim_reduction == 'PCA':
-      pca = PCA(n_components=0.95)
-      # pca = PCA(n_components=15)
+      pca = PCA(n_components=self.n_components)
     elif self.dim_reduction == 'IPCA':
-      pca = IncrementalPCA(n_components=0.95)
+      pca = IncrementalPCA(n_components=self.n_components)
     else:
       pass # more methods
 
@@ -683,18 +756,29 @@ class TSClustering:
         self.plot_data(fig_name='plot_normalised_data')
         self.data_raw_norm = self.data # save the data after normalisation
     
-    if self.feature_extraction is not None:
+    if self.feature_extraction is True:
         self.extract_features()
 
     if self.dim_reduction is not None:
       self.dimensionality_reduction()
 
   def training_each_k(self):
-    if self.data_raw is None:
+    if self.data_raw is None and 'norm' in self.order_of_impute_agg_norm:
       self.data_raw = pd.read_csv(self.save_dir / self.filename_data_before_norm, index_col=self.target_column)
+    elif 'agg' == self.order_of_impute_agg_norm.split("_")[-1]:
+      self.data_raw = pd.read_csv(self.save_dir / self.filename_data_after_agg, index_col=self.target_column)
+    elif 'impute' == self.order_of_impute_agg_norm.split("_")[-1]:
+      self.data_raw = pd.read_csv(self.save_dir / self.filename_data_after_imputed, index_col=self.target_column)
 
-    if self.data_raw_norm is None:
+    if self.data_raw_norm is None and 'norm' in self.order_of_impute_agg_norm:
       self.data_raw_norm = pd.read_csv(self.save_dir / self.filename_data_after_norm, index_col=self.target_column)
+    elif 'agg' == self.order_of_impute_agg_norm.split("_")[-1]:
+      self.data_raw_norm = pd.read_csv(self.save_dir / self.filename_data_after_agg, index_col=self.target_column)
+    elif 'impute' == self.order_of_impute_agg_norm.split("_")[-1]:
+      self.data_raw_norm = pd.read_csv(self.save_dir / self.filename_data_after_imputed, index_col=self.target_column)
+    
+    if self.feature_extraction is True and self.data_features is None:
+      self.data_features = pd.read_csv(self.save_dir / self.filename_data_features, index_col=self.target_column)
     
     best_k = self.best_k
     for self.best_k in best_k: # create model for each k
