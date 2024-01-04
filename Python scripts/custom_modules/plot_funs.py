@@ -14,6 +14,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageColor
 from datetime import datetime
 from modelling_funs import *
+from basic_funs import save_data
 
 def plot_missing_rate(missing_rate, start_year, end_year, save_path, threshold=0.5, rewrite=True):
   """
@@ -261,10 +262,6 @@ def plot_best_k(df_scores, save_path):
 def plot_map(data, save_path, save_name=None):
   df = data.copy()
 
-  # Group by Sensor_Name and Cluster (to be updated, I assume the Sensor_Name is the target)
-  group_columns = ['Sensor_Name', 'Clusters'] if 'Sensor_Name' in df.columns else ['New_Sensor_Name', 'Clusters']
-  grouped_df = df.groupby(group_columns)
-
   # Create a map centered around the mean coordinates
   m = folium.Map(location=[df['Latitude'].mean(), df['Longitude'].mean()], zoom_start=13)
   m_png = folium.Map(width=900, 
@@ -274,16 +271,21 @@ def plot_map(data, save_path, save_name=None):
                      zoom_start=15, 
                      zoom_control=False)
 
-  colors = ['red', 'blue', 'green', 'purple', 'orange', 'darkred', 'lightred', 'beige', 'darkblue', 'darkgreen']
+  colors = ['red', 'pink', 'beige', 'blue', 'green', 'orange', 'purple', 'cadetblue', 'gray']
 
   sorted_df = df.sort_values(by=['Sensor_Name'])
-  sensor_color_mapping = {sensor: colors[i % len(colors)] for i, sensor in enumerate(sorted_df['Sensor_Name'].unique())}
 
-  # Create a Cluster-to-Color mapping based on the first sensor in each cluster
-  cluster_color_mapping = {}
-  for cluster, group_data in sorted_df.groupby('Clusters'):
-    first_sensor = group_data['Sensor_Name'].iloc[0]
-    cluster_color_mapping[cluster] = sensor_color_mapping[first_sensor]
+  # Create a Cluster-to-Color mapping directly based on cluster order
+  unique_clusters = sorted_df['Clusters'].unique()
+  cluster_color_mapping = {cluster: colors[i % len(colors)] for i, cluster in enumerate(unique_clusters)}
+  
+  print(cluster_color_mapping)
+  df_cluster_color_mapping = pd.DataFrame(list(cluster_color_mapping.items()), columns=['Cluster', 'Color'])
+  
+  save_data(df_cluster_color_mapping, save_path / 'clusters_color.csv')
+
+  group_columns = ['Sensor_Name', 'Clusters'] if 'Sensor_Name' in df.columns else ['New_Sensor_Name', 'Clusters']
+  grouped_df = df.groupby(group_columns)
 
   # Loop through the groups (Sensor_Name and Cluster)
   for (sensor_name, cluster), group_data in grouped_df:
