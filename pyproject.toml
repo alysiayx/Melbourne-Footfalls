@@ -28,6 +28,5 @@ autoelbow = "^0.0.4"
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
 
-[tool.poetry.config]
-virtualenvs.create = true
-virtualenvs.path = "/opt/poetry/envs/"
+[virtualenvs]
+create = true
