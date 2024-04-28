@@ -4,16 +4,41 @@
 
 **Setting Up the Environment:**
 
+Open your terminal or command prompt.
+Use the `cd` command to change directory to the location where you downloaded the "Melbourne-Footfalls" project. For example:
+
+```bash
+    cd /path/to/Melbourne-Footfalls
+```
+Replace `/path/to/Melbourne-Footfalls` with the actual path to the directory where you downloaded the project.
+
 - **Option 1:** Using `requirements.txt`
-  - Navigate to the directory containing [`requirements.txt`](./Python%20scripts/requirements.txt) and execute:
+  - Create a virtual environment
+    - using venv or virtualenv:
+    ```bash
+    python -m venv <env_name>
+    source <env_name>/bin/activate   # On Unix/Linux
+    <env_name>\Scripts\activate.bat  # On Windows
     ```
+    
+    - using conda:
+      ```bash
+      conda create --name <env_name> python=3.9 --file requirements.txt
+      conda activate <env_name>
+      ```
+    
+    replace `<env_name>` with the name of virtual environement you specified.
+
+  - Execute the following command in the terminal to install the project dependencies:
+    ```bash
     pip install -r requirements.txt
     ```
 - **Option 2:** Using `pyproject.toml`
-  - Navigate to the directory containing [`pyproject.toml`](./Python%20scripts/pyproject.toml) and execute:
-    ```
+  - Execute the following command in the terminal to install the project dependencies:
+    ```bash
     pip install poetry
     poetry install
+    poetry shell
     ```
 
 ## Basic Data Analysis
