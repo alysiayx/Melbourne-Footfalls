@@ -2,7 +2,7 @@
 *.swp
 
 # Mac crap
-.DS_Store
+*.DS_Store
 
 # Python stuff
 __pycache__
